@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "vstack.h"
+#include "virtualStack.h"
 #define BYTE unsigned char
 #define BITS_IN_HALF_BYTE 4
 #define BITS_IN_BYTES 8
@@ -36,7 +36,7 @@ int main(int number_of_args, char **vargs) {
     }
 
     // Opening the file (rb -> binary read mode)
-    FILE *file_ptr = fopen(filename, 'rb');
+    FILE *file_ptr = fopen(filename, "rb");
     // Moving a pointer to the end of the file
     fseek(file_ptr, 0, SEEK_END);
     /* Get the current positon of the file pointer 
@@ -57,7 +57,7 @@ int main(int number_of_args, char **vargs) {
         // Loading one byte of the file into the buffer
         fread(&buffer, 1, 1, file_ptr);
         // Converting the buffer into binary representation
-        file_byte_one = convertion_from_binary_to_decimal((int)buffer);
+        file_one_byte = convertion_from_binary_to_decimal((int)buffer);
         // Storing the binary representation
         memcpy(&file[index_file_position], file_byte_one, 8);
         index_file_position += 8;
@@ -73,7 +73,7 @@ int main(int number_of_args, char **vargs) {
     struct VirtualStack *virtual_stack = (struct VirtualStack*) malloc(sizeof(struct VirtualStack));
     // Allocate a stack for the virtual stack structure
     virtual_stack->stack = (BYTE *) calloc(MAX_NUM_FUNCTIONS, sizeof(BYTE));
-    virtual_stack->number_of_functions_total = 0;
+    virtual_stack->num_functions_total = 0;
 
     // Initialise memory register array to 0
     for (int i = 0; i < 8; i++) {virtual_stack->memory_register[i] = 0;}
@@ -97,241 +97,535 @@ int main(int number_of_args, char **vargs) {
     // Reading into the file to load instructions into virtual stack
     int current_function_index = DEFAULT_VALUE;
 
-    while (END_PADDING < index_file_position){
+    // Loop to parse functions from the file until all padding bits are processed
+    while (END_PADDING < index_file_position) {
+        // Parse a single function from the file and store it in the function array
         parse_function(file, &index_file_position, virtual_stack->functions_array[current_function_index],
-        (virtual_stack->functions_array[current_function_index]->instructions));
-        virtual_stack->number_of_functions_total++;
+                    (virtual_stack->functions_array[current_function_index]->instructions));
+        
+        // Increment the count of total functions in the virtual stack
+        virtual_stack->num_functions_total++;
+        
+        // Move to the next function index
         current_function_index++;
     }
 
+    // Initialize important virtual stack properties to default values
+    virtual_stack->stack[0] = DEFAULT_VALUE;       // Initialize the base stack value
+    virtual_stack->stack[2] = DEFAULT_VALUE;       // Initialize program counter position
+    virtual_stack->frame_pointer = DEFAULT_VALUE;  // Initialize frame pointer
+    virtual_stack->program_counter = DEFAULT_VALUE;// Initialize program counter
+    virtual_stack->return_value = DEFAULT_VALUE;   // Initialize return value placeholder
 
-    virtual_stack->stack[0] = DEFAULT_VALUE;
-    virtual_stack->stack[2] = DEFAULT_VALUE;
-    virtual_stack->frame_pointer = DEFAULT_VALUE;
-    virtual_stack->program_counter = DEFAULT_VALUE;
-    virtual_stack->return_value = DEFAULT_VALUE;
+    // Find the main function's starting location and set it as the current function position
     int main_function_location = get_main_function(virtual_stack);
     virtual_stack->current_function_position = main_function_location;
+
+    // Initialize stack function position to default
     virtual_stack->stack_function_position = DEFAULT_VALUE;
 
-
-    for (int i = 0; i < 128; i++){
-        if (i == 0){
+    // Initialize the function stack
+    for (int i = 0; i < 128; i++) {
+        if (i == 0) {
+            // Set the first function stack value to default
             virtual_stack->function_stack[i] = DEFAULT_VALUE;
             continue;
         }
-        virtual_stack->function_stack[i] - NO_VALUE;
+        // Set other function stack values to indicate no value
+        virtual_stack->function_stack[i] = NO_VALUE;
     }
 
-    (virtual_stack->stack_pointer) = (virtual_stack->functions_array[main_function_location]->
-        num_arguments_function) + 2;
+    // Set the stack pointer to account for the number of arguments in the main function
+    (virtual_stack->stack_pointer) = (virtual_stack->functions_array[main_function_location]->num_arguments_function) + 2;
+
+    // Store the updated stack pointer in the stack
     virtual_stack->stack[1] = (virtual_stack->stack_pointer);
 
-
-
-    while(TRUE) {
+    // Begin executing instructions in a continuous loop
+    while (TRUE) {
+        // Check for stack overflows
         buffer_overflow(virtual_stack);
+
+        // Get the current function and instruction positions
         int current_function_position = virtual_stack->current_function_position;
         int current_instruction_position = virtual_stack->program_counter;
 
+        // Fetch the current instruction to be executed
         struct Instruction *current_instruction = virtual_stack->functions_array[current_function_position]
             ->instructions[current_instruction_position];
 
-        int *current_address_one = &current_instruction->address_one
-        int *current_address_type_one = &current_instruction->address_type_one
-        int *current_address_two = &current_instruction->address_two
-        int *current_address_type_two = &current_instruction->address_type_two  
+        // Get the addresses and types associated with the current instruction
+        int *current_address_one = &current_instruction->address_one;
+        int *current_address_type_one = &current_instruction->address_type_one;
+        int *current_address_two = &current_instruction->address_two;
+        int *current_address_type_two = &current_instruction->address_type_two;
+
+        // Get the operation code of the current instruction
         int operation_code = current_instruction->opcode;
 
-
-        switch(operation_code){
+        // Perform the operation based on the opcode using a switch-case structure
+        switch (operation_code) {
             case 0:
-                // 000 MOVE
+                // 000 MOVE - Move values between memory/registers
                 MOVE(virtual_stack, current_address_one, current_address_type_one, current_address_two, current_address_type_two);
                 break;
             case 1:
-                // 001 CALL
+                // 001 CALL - Call a function
                 CALL(virtual_stack, current_address_one, current_address_type_one, current_address_two, current_address_type_two);
                 break;
             case 2:
-                // 010 POP
+                // 010 POP - Pop a value from the stack
                 POP(virtual_stack, current_address_one, current_address_type_one);
                 break;
             case 3:
-                // 011 RETURN
+                // 011 RETURN - Return from a function
                 RETURN(virtual_stack);
                 break;
             case 4:
-                // 100 ADD
+                // 100 ADD - Add values from two addresses and store the result
                 ADD(virtual_stack, current_address_one, current_address_two);
                 break;
             case 5:
-                // 101 AND
+                // 101 AND - Perform bitwise AND between two values
                 AND(virtual_stack, current_address_one, current_address_two);
                 break;
             case 6:
-                // 110 NOT
+                // 110 NOT - Perform bitwise NOT on a value
                 NOT(virtual_stack, current_address_one);
                 break;
             case 7:
-                // 111 EQUAL
+                // 111 EQUAL - Check if a value is equal to zero
                 EQUAL(virtual_stack, current_address_one);
                 break;
         }
     }
 
-    free_all_memory(virtual_stack, file);
-    return 0;
-
+    // Free all allocated memory and clean up before exiting
+    free_all(virtual_stack, file);
+    return 0; 
 }
 
-char *convertion_from_decimal_to_binary(int decimal){
-    int position_index = DEFAULT_VALUE;
-    char *binary = (char*) malloc(BITS_IN_BYTES * sizeof(char) + 1);
-    unsigned bit_mask_position = 1 << 7;
-    while(bit_mask_position > DEFAULT_VALUE){
-        if ((decimal & bit_mask_position) == 0){binary[position_index] = '0';}
-        else {binary[position_index] = '1';}
-        position_index++;
-        bit_mask_position = bit_mask_position >> 1;
+// Function to convert a decimal number to an 8-bit binary string
+char *convertion_from_decimal_to_binary(int decimal) {
+    // Initialize the position index for the binary array
+    int position_index = DEFAULT_VALUE; 
+    // Allocate memory for an 8-bit binary string (+1 for null terminator)
+    char *binary = (char*) malloc(BITS_IN_BYTES * sizeof(char) + 1); 
+    unsigned bit_mask_position = 1 << 7; // Set the bitmask to the highest bit (128 for an 8-bit number)
+
+    // Loop through all 8 bits
+    while (bit_mask_position > DEFAULT_VALUE) {
+        if ((decimal & bit_mask_position) == 0) { 
+            // If the current bit is 0, set the corresponding binary array position to '0'
+            binary[position_index] = '0';
+        } else {
+            // If the current bit is 1, set the corresponding binary array position to '1'
+            binary[position_index] = '1';
+        }
+        position_index++; // Move to the next position in the binary array
+        bit_mask_position = bit_mask_position >> 1; // Shift the bitmask one position to the right
     }
-    binary[8] = '\0';
-    return binary;
+
+    binary[8] = '\0'; // Null-terminate the binary string
+    return binary; // Return the binary string
 }
 
-char *convertion_from_binary_to_decimal(int decimal){
-    int decimal = DEFAULT_VALUE, intermediary_value = DEFAULT_VALUE;
-    int offset = 1;
+// Function to convert a binary string to a decimal number
+char *convertion_from_binary_to_decimal(char *binary, int number_bits) {
+    // Initialize variables to store the decimal value and intermediary computations
+    int decimal = DEFAULT_VALUE, intermediary_value = DEFAULT_VALUE; 
+    int offset = 1; // Initialize the offset for each binary digit (powers of 2)
 
-    for (int i = number_bits - 1; i>=0; i--){
-        intermediary_value = (int) (binary[i] - '0');
-        decimal = decimal + (intermediary_value * offset);
-        offset = 2 * offset;
+    // Loop through the binary string from the least significant bit (LSB) to the most significant bit (MSB)
+    // int number_bits = 8;
+    for (int i = number_bits - 1; i >= 0; i--) {
+        intermediary_value = (int)(binary[i] - '0'); // Convert the current binary character to its integer value (0 or 1)
+        decimal = decimal + (intermediary_value * offset); // Add the weighted value of the current bit to the decimal number
+        offset = 2 * offset; // Double the offset for the next higher-order bit
     }
-    return decimal;
+    return decimal; // Return the computed decimal value
 }
 
-void free_all(struct VirtualStack *virtual_stack, char *file){
-    for (int i=0; i < MAX_NUM_FUNCTIONS; i++){
-        for (int j=0; j<MAX_NUM_INSTRUCTIONS; j++){free(virtual_stack->functions_array[i]->instructions[j])};
-    free(virtual_stack->functions_array[i]->instructions);
-    free(virtual_stack->functions_array[i]);
+// Function to free all dynamically allocated memory
+void free_all(struct VirtualStack *virtual_stack, char *file) {
+    // Free each instruction in each function
+    for (int i = 0; i < MAX_NUM_FUNCTIONS; i++) {
+        for (int j = 0; j < MAX_NUM_INSTRUCTIONS; j++) {
+            free(virtual_stack->functions_array[i]->instructions[j]); // Free individual instructions
+        }
+        free(virtual_stack->functions_array[i]->instructions); // Free the instruction array of the current function
+        free(virtual_stack->functions_array[i]); // Free the current function structure
     }
-    free(virtual_stack->functions_array);
-    free(virtual_stack->stack);
-    free(virtual_stack);
-    free(file);
+
+    free(virtual_stack->functions_array); // Free the array of function pointers
+    free(virtual_stack->stack); // Free the stack array
+    free(virtual_stack); // Free the virtual stack structure itself
+    free(file); // Free the file buffer
 }
 
-void parse_function(char *file, int *index_position, struct Function *function, struct Instruction **instruction){
-    // For Function Struct.
-    int num_instructions = DEFAULT_VALUE;
-    int current_function_id = NO_FUNCTION_ID;
-    int num_arguments = DEFAULT_VALUE;
 
-    // For Instruction Struct.
-    int address_one = DEFAULT_VALUE;
-    int address_type_two = DEFAULT_VALUE;
-    int address_two = DEFAULT_VALUE;
-    int address_type_one = DEFAULT_VALUE;
-    int instruction_opcode = DEFAULT_VALUE;
+// Function to parse a single function from the binary file and populate the function and its instructions
+void parse_function(char *file, int *index_position, struct Function *function, struct Instruction **instruction) {
+    // Variables for Function struct
+    int num_instructions = DEFAULT_VALUE;  // Number of instructions in the function
+    int current_function_id = NO_FUNCTION_ID;  // Function ID
+    int num_arguments = DEFAULT_VALUE;  // Number of arguments in the function
 
+    // Variables for Instruction struct
+    int address_one = DEFAULT_VALUE;  // First address in the instruction
+    int address_type_one = DEFAULT_VALUE;  // Type of the first address
+    int address_two = DEFAULT_VALUE;  // Second address in the instruction
+    int address_type_two = DEFAULT_VALUE;  // Type of the second address
+    int instruction_opcode = DEFAULT_VALUE;  // Operation code for the instruction
 
+    // Move back by 1 byte to read the number of instructions
     *index_position -= BITS_IN_BYTES;
     num_instructions = convertion_from_binary_to_decimal(&file[*index_position], BITS_IN_BYTES);
-    function->num_instructions = num_instructions;
+    function->num_instructions = num_instructions;  // Store the number of instructions in the function struct
 
-    for (int i = num_instructions - 1; i >= 0; i--){
-        *index_position -= 3;
+    // Loop through each instruction in the function
+    for (int i = num_instructions - 1; i >= 0; i--) {
+        *index_position -= 3;  // Move back 3 bits to read the instruction opcode
         instruction_opcode = convertion_from_binary_to_decimal(&file[*index_position], 3);
-        instruction[i]->opcode = instruction_opcode;
+        instruction[i]->opcode = instruction_opcode;  // Store the opcode in the instruction struct
 
-        switch (instruction_opcode){
+        switch (instruction_opcode) {
             case 3:
-                initalise_instruction(NO_VALUE, NO_VALUE, NO_VALUE, NO_VALUE, &instruction[i]);
+                // Case for RETURN instruction
+                initialise_instruction(NO_VALUE, NO_VALUE, NO_VALUE, NO_VALUE, &instruction[i]);
                 break;
             case 0:
             case 1:
             case 4:
             case 5:
-            // Move, Call, Add, And cases
-                *index_position -= 2;
+                // Cases for MOVE, CALL, ADD, AND instructions
+                *index_position -= 2;  // Move back 2 bits to read the first address type
                 address_type_one = convertion_from_binary_to_decimal(&file[*index_position], 2);
-                *index_position -= get_size_instruct_address(address_type_one);
+                *index_position -= get_size_instruct_address(address_type_one);  // Move back based on the size of the first address
                 address_one = convertion_from_binary_to_decimal(&file[*index_position], get_size_instruct_address(address_type_one));
-                *index_position -= 2;
+
+                *index_position -= 2;  // Move back 2 bits to read the second address type
                 address_type_two = convertion_from_binary_to_decimal(&file[*index_position], 2);
-                *index_position -= get_size_instruct_address(address_type_two);
+                *index_position -= get_size_instruct_address(address_type_two);  // Move back based on the size of the second address
                 address_two = convertion_from_binary_to_decimal(&file[*index_position], get_size_instruct_address(address_type_two));
+
+                // Initialize the instruction with the parsed addresses and types
                 initialise_instruction(address_one, address_two, address_type_one, address_type_two, &instruction[i]);
                 break;
             case 2:
             case 6:
             case 7:
-			// Pop, Not, Equal cases.
-                *index_position -= 2;
+                // Cases for POP, NOT, EQUAL instructions
+                *index_position -= 2;  // Move back 2 bits to read the first address type
                 address_type_one = convertion_from_binary_to_decimal(&file[*index_position], 2);
-                *index_position -= get_size_instruct_address(address_type_one);
+                *index_position -= get_size_instruct_address(address_type_one);  // Move back based on the size of the first address
                 address_one = convertion_from_binary_to_decimal(&file[*index_position], get_size_instruct_address(address_type_one));
+
+                // Initialize the instruction with only the first address
                 initialise_instruction(address_one, -1, address_type_one, -1, &instruction[i]);
                 break;
         }
     }
 
+    // Move back to parse the number of arguments and function ID
     *index_position -= BITS_IN_HALF_BYTE;
     num_arguments = convertion_from_binary_to_decimal(&file[*index_position], BITS_IN_HALF_BYTE);
     *index_position -= BITS_IN_HALF_BYTE;
     current_function_id = convertion_from_binary_to_decimal(&file[*index_position], BITS_IN_HALF_BYTE);
+
+    // Store the parsed function ID, number of arguments, and instructions in the function struct
     function->function_id = current_function_id;
     function->num_arguments_function = num_arguments;
     function->instructions = instruction;
 }
 
-
-// Compute the size of the address
-int get_size_instruct_address(int address_type){
-    switch(address_type){
-        case 0: return 8;
-        case 1: return 3;
-        case 2: return 7;
-        case 3: return 7;
+// Compute the size of an address based on its type
+int get_size_instruct_address(int address_type) {
+    switch (address_type) {
+        case 0: return 8;  // Value: 8 bits
+        case 1: return 3;  // Register address: 3 bits
+        case 2: return 7;  // Stack address: 7 bits
+        case 3: return 7;  // Pointer address: 7 bits
     }
-    return DEFAULT_VALUE;
+    return DEFAULT_VALUE;  // Default size if invalid address type
 }
 
-
-// Need to initalise the instruction struct
-void initialise_instruction(int add_one, int add_two, int address_type_one, int address_type_two,
-                                struct Instruction **instruction){
+// Initialize the Instruction struct with provided values
+void initialise_instruction(int add_one, int add_two, int address_type_one, int address_type_two, struct Instruction **instruction) {
     (*instruction)->address_one = add_one;
     (*instruction)->address_type_one = address_type_one;
     (*instruction)->address_two = add_two;
     (*instruction)->address_type_two = address_type_two;
 }
 
-// The index of where the main function exists
-int main_function_location(struct VirtualStack *virtual_stack){
-    for (int i = 0; i < virtual_stack->number_of_functions_total; i++){
-        if (virtual_stack_>functions_array[i]->function_id == 0){
-            return 1;
+// Get the location of the main function (function ID 0) in the function array
+int main_function_location(struct VirtualStack *virtual_stack) {
+    for (int i = 0; i < virtual_stack->num_functions_total; i++) {
+        if (virtual_stack->functions_array[i]->function_id == 0) {
+            return i;  // Return the index of the main function
         }
     }
-    return NO_VALUE;
+    return NO_VALUE;  // Return NO_VALUE if the main function is not found
 }
 
-
-// The index of where the function exists
-int get function_location(int locate, struct VirtualStack *virtual_stack){
-    if (virtual_stack->functions_array[i]->function_id == 0){
-        return 1;
+// Get the location of a specific function by its ID
+int get_function_location(int locate, struct VirtualStack *virtual_stack) {
+    for (int i = 0; i < virtual_stack->num_functions_total; i++) {
+        if (virtual_stack->functions_array[i]->function_id == locate) {
+            return i;  // Return the index of the function with the specified ID
+        }
     }
-    return NO_VALUE;
+    return NO_VALUE;  // Return NO_VALUE if the function is not found
 }
 
+void empty_registers(struct VirtualStack *virtual_stack)
+{
+    /*************************************************************
+    * Name: empty_registers
+    * Description: Clear out registers since stack frame popped.
+    *************************************************************/
+
+		for(int i = 0; i<8; i++)
+    {
+        virtual_stack->memory_register[i] = 0;
+    }
+    return;
+}
 
 
 /* EXECUTING INSTRUCTIONS*/
 
+// MOVE - moving the value from one memory location to another
+void MOVE(struct VirtualStack *virtual_stack, int *address_one, int address_type_one,
+            int *address_two, int address_type_two){
+    int frame_pointer = virtual_stack->frame_pointer;
 
+    if (*address_one == 1 && address_type_one == 3 ){
+        //Push to the top of the stack
+        virtual_stack->stack_pointer += 1;
+        virtual_stack->stack[frame_pointer + 1] += 1;
+        buffer_overflow(virtual_stack);
+        switch(address_type_two)
+			{
+				case 0:
+					virtual_stack->stack[virtual_stack->stack_pointer] = *address_two;
+					break;
+				case 1:
+				  virtual_stack->stack[virtual_stack->stack_pointer] = virtual_stack->memory_register[*address_two];
+					break;
+				case 2:
+					virtual_stack->stack[virtual_stack->stack_pointer] = virtual_stack->stack[*address_two + frame_pointer];
+					break;
+			}
+			increment_pointer_counter(virtual_stack);
+			return;
+    }
+
+    if (address_type_two == POINTER_TYPE){
+        *address_two = virtual_stack->stack[frame_pointer + *address_two];
+        address_type_two = 2;
+    }
+
+    if (address_type_one == POINTER_TYPE){
+        *address_one = virtual_stack->stack[frame_pointer + *address_one];
+        address_type_one = 2;
+    }
+
+    if(address_type_one == 2 && *address_one == (frame_pointer + 2))
+    {
+        // PROGRAM COUNTER.
+        switch(address_type_two)
+        {
+            case 0:
+                // VALUE
+                virtual_stack->program_counter = *address_two;
+                break;
+            case 1:
+                // REGISTER ADDRESS.
+                virtual_stack->program_counter = virtual_stack->memory_register[*address_two];
+                break;
+            case 2:
+                // STACK ADDRESS.
+                virtual_stack->program_counter = (BYTE) virtual_stack->stack[frame_pointer + *address_two];
+                break;
+        }
+    }
+
+    switch (address_type_two){
+        case 0:
+            switch (address_type_one){
+                case 1:
+                    virtual_stack->memory_register[*address_one] = *address_two;
+                    break;
+                case 2:
+                    virtual_stack->stack[*address_one + frame_pointer] = (BYTE) *address_two;
+                    break;
+            }
+            break;
+
+        case 1:
+            switch (address_type_one){
+                case 1:
+                    virtual_stack->memory_register[*address_one] = 
+                        virtual_stack->memory_register[*address_two];
+                    break;
+                case 2:
+                    virtual_stack->stack[*address_one + frame_pointer] = 
+                        (BYTE) virtual_stack->memory_register[*address_two];
+                    break;
+            }
+            break;
+
+        case 2:
+            switch (address_type_one){
+                case 1:
+                    virtual_stack->memory_register[*address_one] = 
+                        virtual_stack->memory_register[*address_two + frame_pointer];
+                    break;
+                case 2:
+                    virtual_stack->stack[*address_one + frame_pointer] = 
+                        (BYTE) virtual_stack->memory_register[*address_two + frame_pointer];
+            }
+                    break;
+    }
+    increment_pointer_counter(virtual_stack);
+}
+
+// CALL
+void CALL(struct VirtualStack *virtual_stack, int *address_one, int address_type_one, int *address_two, int address_type_two){
+    buffer_overflow(virtual_stack);
+    if (address_type_one == 3){
+        *address_one = virtual_stack->stack[virtual_stack->frame_pointer + *address_one];
+    }
+
+    virtual_stack->previous_frame_pointer = virtual_stack->frame_pointer;
+    int previous_frame_pointer = virtual_stack->previous_frame_pointer;
+    virtual_stack->frame_pointer = virtual_stack->stack_pointer+1;
+    virtual_stack->stack[virtual_stack->frame_pointer] = virtual_stack->stack[previous_frame_pointer];
+
+    virtual_stack->stack[(virtual_stack->frame_pointer) + 2] = 0;
+    virtual_stack->stack[previous_frame_pointer + 2]++;
+    virtual_stack->program_counter = 0;
+
+    int function_location = get_function_location(*address_two, virtual_stack);
+    int number_of_args = virtual_stack->functions_array[function_location]->num_arguments_function;
+
+    for(int i=0; i<number_of_args; i++){
+        virtual_stack->stack[(virtual_stack->frame_pointer) + i + 3] = virtual_stack->stack[(virtual_stack->previous_frame_pointer) + i + *address_one];
+    }
+
+    virtual_stack->current_function_position = function_location;
+    virtual_stack->stack_function_position++;
+    virtual_stack->function_stack[virtual_stack->stack_function_position] = *address_two;
+
+    virtual_stack->stack_pointer = virtual_stack->frame_pointer+number_of_args+2;
+    virtual_stack->stack[virtual_stack->frame_pointer+1] = virtual_stack->stack_pointer;
+
+    empty_registers(virtual_stack);
+}
+
+// Pop
+void POP(struct VirtualStack *virtual_stack, int *address_one, int address_type_one){
+    if (address_type_one == 3){
+        *address_one = virtual_stack->stack[virtual_stack->frame_pointer + *address_one];
+    }
+    int value = virtual_stack->stack[virtual_stack->frame_pointer + *address_one];
+    virtual_stack->return_value = value;
+    increment_pointer_counter(virtual_stack)
+}
+
+// Return 
+void RETURN(struct VirtualStack *virtual_stack){
+    is_main(virtual_stack);
+    int current_return_value = virtual_stack->return_value;
+    int previous_frame = virtual_stack->previous_frame_pointer;
+    virtual_stack->stack[virtual_stack->frame_pointer] = current_return_value;
+    virtual_stack->stack_pointer = (virtual_stack->frame_pointer) - 1;
+
+    int stack_index = (virtual_stack->frame_pointer)+1;
+    int stack_end = (virtual_stack->stack_pointer)+1;
+    for(int i = stack_index; i < stack_end; i++){ virtual_stack->stack[i] = 0;}
+
+    virtual_stack->frame_pointer = previous_frame;
+    virtual_stack->function_stack[virtual_stack->stack_function_position] = -1;
+    virtual_stack->stack_function_position--;
+
+    empty_registers(virtual_stack);
+
+    int previous_function_position = get_function_location(virtual_stack->function_stack[virtual_stack->stack_function_position], virtual_stack);
+    virtual_stack->current_function_position = previous_function_position;
+
+    virtual_stack->program_counter = virtual_stack->stack[virtual_stack->frame_pointer + 2];
+
+    increment_pointer_counter(virtual_stack);
+
+}
+
+// Add 
+void ADD(struct VirtualStack *virtual_stack, int *address_one, int *address_two){
+    int result = virtual_stack->memory_register[*address_one] + virtual_stack->memory_register[*address_two];
+    virtual_stack->memory_register[*address_two] = result;
+    increment_pointer_counter(virtual_stack);
+}
+
+// And
+void AND(struct VirtualStack *virtual_stack, int *address_one, int *address_two){
+    int result = virtual_stack->memory_register[*address_one] & virtual_stack->memory_register[*address_two];
+    virtual_stack->memory_register[*address_two] = result;
+    increment_pointer_counter(virtual_stack);
+}
+
+// Not
+void NOT(struct VirtualStack *virtual_stack, int *register_address){
+    virtual_stack->memory_register[*register_address] = ~(virtual_stack->memory_register[*register_address]);
+    increment_pointer_counter(virtual_stack);
+}
+
+// Equal
+void EQUAL(struct VirtualStack *virtual_stack, int *register_address){
+    if (virtual_stack->memory_register[*register_address] == FALSE){virtual_stack->memory_register[*register_address] = TRUE;}
+    else {virtual_stack->memory_register[*register_address] = FALSE;}
+    increment_pointer_counter(virtual_stack);
+}
+
+/*HELPER FUNCTIONS*/
+void buffer_overflow(struct VirtualStack virtual_stack){
+    if(((virtual_stack->stack_pointer) + (virtual_stack->frame_pointer)) >= 128) {
+        printf("Stack Overflow!\n");
+        exit(0);
+    }
+
+    if(virtual_stack->program_counter >= 128){
+        printf("Stack Overflow!\n");
+        exit(0);
+    }
+}
+
+void increment_pointer_counter(struct VirtualStack virtual_stack){
+    int location = virtual_stack->frame_pointer;
+    virtual_stack->program_counter++;
+    virtual_stack->stack[location+2]++;
+	check_overflow(virtual_stack);
+    return;
+}
+
+int check_is_register(int address_type){
+    if (address_type == 3){
+        return TRUE;
+    }
+    return FALSE;
+}
+
+int is_register(int address){
+    if (address == 1) return 1;
+    return 0;
+}
+
+void is_main(struct VirtualStack virtual_stack){
+    if (virtual_stack->stack_function_position == 0){
+        printf("%d\n", virtual_stack->return_value);
+    }
+    return;
+}
 
 
