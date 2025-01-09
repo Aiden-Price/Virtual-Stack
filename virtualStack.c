@@ -35,6 +35,13 @@ int main(int number_of_args, char **vargs) {
         exit(0);
     }
 
+    printf("1\n");
+
+//     for (int i = 0; i < file_length; i++) {
+//     printf("Byte %d: %02x\n", i, (unsigned char)file[i]);
+// }
+
+
     // Opening the file (rb -> binary read mode)
     FILE *file_ptr = fopen(filename, "rb");
     // Moving a pointer to the end of the file
@@ -50,22 +57,65 @@ int main(int number_of_args, char **vargs) {
     BYTE buffer;
     // Allocate memory for file content storage
     char *file = (char *) malloc(file_length * BITS_IN_BYTES + 1);
+
+    if (!file) {
+        printf("Error: Memory allocation failed for 'file'.\n");
+        exit(1);
+    }
+
     // Point to individual bytes during processing
     char *file_one_byte;
 
-    for (int i = 0; i < file_length; i++){
-        // Loading one byte of the file into the buffer
-        fread(&buffer, 1, 1, file_ptr);
-        // Converting the buffer into binary representation
-        file_one_byte = convertion_from_binary_to_decimal((int)buffer);
-        // Storing the binary representation
-        memcpy(&file[index_file_position], file_byte_one, 8);
+    printf("Reading binary file content...\n");
+    for (int i = 0; i < file_length; i++) {
+        size_t read_size = fread(&buffer, 1, 1, file_ptr);
+        if (read_size != 1) {
+            printf("Error: Failed to read byte %d from file.\n", i);
+            exit(1);
+        }
+
+        char *file_one_byte = convertion_from_decimal_to_binary((int)buffer);
+        if (!file_one_byte) {
+            printf("Error: Conversion to binary failed for byte %d (Value: %d).\n", i, buffer);
+            exit(1);
+        }
+
+        printf("Read byte %d: Decimal=%d, Binary=%s\n", i, buffer, file_one_byte);
+
+        memcpy(&file[index_file_position], file_one_byte, 8);
         index_file_position += 8;
-        free(file_byte_one);
+
+        free(file_one_byte);
     }
 
+    printf("Validating binary content...\n");
+    for (int i = 0; i < index_file_position; i++) {
+        if (file[i] != '0' && file[i] != '1') {
+            printf("Error: Invalid character '%c' (Hex: %02x) at position %d.\n", 
+                    file[i], (unsigned char)file[i], i);
+            exit(1);
+        }
+    }
+    printf("Binary content validated successfully.\n");
+
+
+
+    printf("2\n");
     // Ensuring the buffer used to store file data is null terminated
     file[file_length * BITS_IN_BYTES] = '\0';
+
+    // Debugging: Verify the binary file content
+    printf("Binary File Content (Raw Data):\n");
+    for (int i = 0; i < index_file_position; i++) {
+        // Print the binary data character by character
+        printf("Index %d: '%c' (Hex: %02x)\n", i, file[i], (unsigned char)file[i]);
+        if (file[i] != '0' && file[i] != '1') {
+            printf("Error: Invalid binary character '%c' at index %d. Expected '0' or '1'.\n", file[i], i);
+            exit(1);
+        }
+    }
+    printf("\nFinished verifying binary file content.\n");
+
 
 
 
@@ -81,6 +131,8 @@ int main(int number_of_args, char **vargs) {
     virtual_stack->functions_array = (struct Function**) malloc(MAX_NUM_FUNCTIONS *
         sizeof(struct Function*));
 
+
+    printf("3\n");
     // Initalise each function in the function array
     for (int i = 0; i < MAX_NUM_FUNCTIONS; i++) {
         // Allocate memory for the fucntion structure in the array
@@ -110,6 +162,8 @@ int main(int number_of_args, char **vargs) {
         current_function_index++;
     }
 
+    printf("4\n");
+
     // Initialize important virtual stack properties to default values
     virtual_stack->stack[0] = DEFAULT_VALUE;       // Initialize the base stack value
     virtual_stack->stack[2] = DEFAULT_VALUE;       // Initialize program counter position
@@ -118,8 +172,23 @@ int main(int number_of_args, char **vargs) {
     virtual_stack->return_value = DEFAULT_VALUE;   // Initialize return value placeholder
 
     // Find the main function's starting location and set it as the current function position
-    int main_function_location = get_main_function(virtual_stack);
+    int main_function_location = get_main_function_location(virtual_stack);
     virtual_stack->current_function_position = main_function_location;
+
+    if (main_function_location == NO_VALUE) {
+    printf("Error: Main function not found.\n");
+    exit(1);
+}
+
+if (virtual_stack->functions_array[main_function_location] == NULL) {
+    printf("Error: Function at location %d is NULL.\n", main_function_location);
+    exit(1);
+}
+
+if (virtual_stack->functions_array[main_function_location]->num_arguments_function < 0) {
+    printf("Error: Invalid number of arguments for main function.\n");
+    exit(1);
+}
 
     // Initialize stack function position to default
     virtual_stack->stack_function_position = DEFAULT_VALUE;
@@ -134,48 +203,57 @@ int main(int number_of_args, char **vargs) {
         // Set other function stack values to indicate no value
         virtual_stack->function_stack[i] = NO_VALUE;
     }
+    printf("5\n");
 
     // Set the stack pointer to account for the number of arguments in the main function
     (virtual_stack->stack_pointer) = (virtual_stack->functions_array[main_function_location]->num_arguments_function) + 2;
+    printf("5a\n");
 
     // Store the updated stack pointer in the stack
     virtual_stack->stack[1] = (virtual_stack->stack_pointer);
+    printf("5b\n");
 
     // Begin executing instructions in a continuous loop
     while (TRUE) {
         // Check for stack overflows
         buffer_overflow(virtual_stack);
+        printf("5c\n");
 
         // Get the current function and instruction positions
         int current_function_position = virtual_stack->current_function_position;
         int current_instruction_position = virtual_stack->program_counter;
+        printf("5d\n");
 
         // Fetch the current instruction to be executed
         struct Instruction *current_instruction = virtual_stack->functions_array[current_function_position]
             ->instructions[current_instruction_position];
+            printf("5e\n");
 
         // Get the addresses and types associated with the current instruction
         int *current_address_one = &current_instruction->address_one;
         int *current_address_type_one = &current_instruction->address_type_one;
         int *current_address_two = &current_instruction->address_two;
         int *current_address_type_two = &current_instruction->address_type_two;
+        printf("5f\n");
 
         // Get the operation code of the current instruction
         int operation_code = current_instruction->opcode;
+
+        printf("6\n");
 
         // Perform the operation based on the opcode using a switch-case structure
         switch (operation_code) {
             case 0:
                 // 000 MOVE - Move values between memory/registers
-                MOVE(virtual_stack, current_address_one, current_address_type_one, current_address_two, current_address_type_two);
+                MOVE(virtual_stack, current_address_one, *current_address_type_one, current_address_two, *current_address_type_two);
                 break;
             case 1:
                 // 001 CALL - Call a function
-                CALL(virtual_stack, current_address_one, current_address_type_one, current_address_two, current_address_type_two);
+                CALL(virtual_stack, current_address_one, *current_address_type_one, current_address_two, *current_address_type_two);
                 break;
             case 2:
                 // 010 POP - Pop a value from the stack
-                POP(virtual_stack, current_address_one, current_address_type_one);
+                POP(virtual_stack, current_address_one, *current_address_type_one);
                 break;
             case 3:
                 // 011 RETURN - Return from a function
@@ -231,19 +309,23 @@ char *convertion_from_decimal_to_binary(int decimal) {
 }
 
 // Function to convert a binary string to a decimal number
-char *convertion_from_binary_to_decimal(char *binary, int number_bits) {
-    // Initialize variables to store the decimal value and intermediary computations
-    int decimal = DEFAULT_VALUE, intermediary_value = DEFAULT_VALUE; 
-    int offset = 1; // Initialize the offset for each binary digit (powers of 2)
+int convertion_from_binary_to_decimal(char *binary, int number_bits) {
+    int decimal = 0;
+    int offset = 1;
 
-    // Loop through the binary string from the least significant bit (LSB) to the most significant bit (MSB)
-    // int number_bits = 8;
     for (int i = number_bits - 1; i >= 0; i--) {
-        intermediary_value = (int)(binary[i] - '0'); // Convert the current binary character to its integer value (0 or 1)
-        decimal = decimal + (intermediary_value * offset); // Add the weighted value of the current bit to the decimal number
-        offset = 2 * offset; // Double the offset for the next higher-order bit
+        if (binary[i] == '1') {
+            decimal += offset;
+        } else if (binary[i] == '0') {
+            // Valid binary character
+        } else {
+            printf("Error: Invalid binary character '%c' at position %d. Expected '0' or '1'.\n",
+                   binary[i], i);
+            exit(1);
+        }
+        offset *= 2;
     }
-    return decimal; // Return the computed decimal value
+    return decimal;
 }
 
 // Function to free all dynamically allocated memory
@@ -337,6 +419,14 @@ void parse_function(char *file, int *index_position, struct Function *function, 
     function->function_id = current_function_id;
     function->num_arguments_function = num_arguments;
     function->instructions = instruction;
+
+    printf("Raw Binary for Num Instructions: %.*s\n", BITS_IN_BYTES, &file[*index_position]);
+    printf("Raw Binary for Function ID: %.*s\n", BITS_IN_HALF_BYTE, &file[*index_position - BITS_IN_HALF_BYTE]);
+
+
+    printf("Parsed Function: ID=%d, Num Instructions=%d, Num Arguments=%d\n",
+       function->function_id, function->num_instructions, function->num_arguments_function);
+
 }
 
 // Compute the size of an address based on its type
@@ -359,7 +449,7 @@ void initialise_instruction(int add_one, int add_two, int address_type_one, int 
 }
 
 // Get the location of the main function (function ID 0) in the function array
-int main_function_location(struct VirtualStack *virtual_stack) {
+int get_main_function_location(struct VirtualStack *virtual_stack) {
     for (int i = 0; i < virtual_stack->num_functions_total; i++) {
         if (virtual_stack->functions_array[i]->function_id == 0) {
             return i;  // Return the index of the main function
@@ -531,7 +621,7 @@ void POP(struct VirtualStack *virtual_stack, int *address_one, int address_type_
     }
     int value = virtual_stack->stack[virtual_stack->frame_pointer + *address_one];
     virtual_stack->return_value = value;
-    increment_pointer_counter(virtual_stack)
+    increment_pointer_counter(virtual_stack);
 }
 
 // Return 
@@ -589,7 +679,7 @@ void EQUAL(struct VirtualStack *virtual_stack, int *register_address){
 }
 
 /*HELPER FUNCTIONS*/
-void buffer_overflow(struct VirtualStack virtual_stack){
+void buffer_overflow(struct VirtualStack *virtual_stack){
     if(((virtual_stack->stack_pointer) + (virtual_stack->frame_pointer)) >= 128) {
         printf("Stack Overflow!\n");
         exit(0);
@@ -601,11 +691,11 @@ void buffer_overflow(struct VirtualStack virtual_stack){
     }
 }
 
-void increment_pointer_counter(struct VirtualStack virtual_stack){
+void increment_pointer_counter(struct VirtualStack *virtual_stack){
     int location = virtual_stack->frame_pointer;
     virtual_stack->program_counter++;
     virtual_stack->stack[location+2]++;
-	check_overflow(virtual_stack);
+	buffer_overflow(virtual_stack);
     return;
 }
 
@@ -621,7 +711,7 @@ int is_register(int address){
     return 0;
 }
 
-void is_main(struct VirtualStack virtual_stack){
+void is_main(struct VirtualStack *virtual_stack){
     if (virtual_stack->stack_function_position == 0){
         printf("%d\n", virtual_stack->return_value);
     }
