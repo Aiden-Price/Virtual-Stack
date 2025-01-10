@@ -468,15 +468,8 @@ int get_function_location(int locate, struct VirtualStack *virtual_stack) {
     return NO_VALUE;  // Return NO_VALUE if the function is not found
 }
 
-void empty_registers(struct VirtualStack *virtual_stack)
-{
-    /*************************************************************
-    * Name: empty_registers
-    * Description: Clear out registers since stack frame popped.
-    *************************************************************/
-
-		for(int i = 0; i<8; i++)
-    {
+void empty_registers(struct VirtualStack *virtual_stack) {
+	for(int i = 0; i<8; i++) {
         virtual_stack->memory_register[i] = 0;
     }
     return;
